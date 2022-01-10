@@ -3373,3 +3373,1032 @@ new Van(); // Error: Inheriting class must define foo()
 
 #### 4. 继承内置类型
 
+ES6 类为继承内置引用类型提供了顺畅的机制，开发者可以方便地扩展内置类型：
+
+```javascript
+class SuperArray extends Array {
+    shuffle() {
+    // 洗牌算法
+        for (let i = this.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [this[i], this[j]] = [this[j], this[i]];
+        }
+    }
+}
+let a = new SuperArray(1, 2, 3, 4, 5);
+console.log(a instanceof Array); // true
+console.log(a instanceof SuperArray); // true
+console.log(a); // [1, 2, 3, 4, 5]
+a.shuffle();
+console.log(a); // [3, 1, 4, 5, 2]
+```
+
+有些内置类型的方法会返回新实例。默认情况下，返回实例的类型与原始实例的类型是一致的：
+
+```javascript
+class SuperArray extends Array {}
+let a1 = new SuperArray(1, 2, 3, 4, 5);
+let a2 = a1.filter(x => !!(x%2))
+console.log(a1); // [1, 2, 3, 4, 5]
+console.log(a2); // [1, 3, 5]
+console.log(a1 instanceof SuperArray); // true
+console.log(a2 instanceof SuperArray); // true
+```
+
+如果想覆盖这个默认行为，则可以覆盖Symbol.species 访问器，这个访问器决定在创建返回的实例时使用的类：
+
+```javascript
+class SuperArray extends Array {
+    static get [Symbol.species]() {
+    	return Array;
+    }
+}
+let a1 = new SuperArray(1, 2, 3, 4, 5);
+let a2 = a1.filter(x => !!(x%2))
+console.log(a1); // [1, 2, 3, 4, 5]
+console.log(a2); // [1, 3, 5]
+console.log(a1 instanceof SuperArray); // true
+console.log(a2 instanceof SuperArray); // false
+```
+
+
+
+#### 5. 类混入
+
+类混入指的是把不同类的行为集中到一个类是，这一种常见的JavaScript 模式。混入模式可以通过在一个表达式中连缀多个混入元素来实现，这个表达式最终会解析为一个可以被继承的类。如果Person 类需要组合A、B、C，则需要某种机制实现B 继承A，C 继承B，而Person再继承C，从而把A、B、C 组合到这个超类中。实现这种模式有不同的策略。
+
+
+
+## 8.5 小结
+
+对象在代码执行过程中的任何时候都可以被创建和增强，具有极大的动态性，并不是严格定义的实体。下面的模式适用于创建对象。
+
+- 工厂模式就是一个简单的函数，这个函数可以创建对象，为它添加属性和方法，然后返回这个对象。这个模式在构造函数模式出现后就很少用了。
+- 使用构造函数模式可以自定义引用类型，可以使用new 关键字像创建内置类型实例一样创建自定义类型的实例。不过，构造函数模式也有不足，主要是其成员无法重用，包括函数。考虑到函数本身是松散的、弱类型的，没有理由让函数不能在多个对象实例间共享。
+- 原型模式解决了成员共享的问题，只要是添加到构造函数prototype 上的属性和方法就可以共享。而组合构造函数和原型模式通过构造函数定义实例属性，通过原型定义共享的属性和方法。
+
+JavaScript 的继承主要通过原型链来实现。原型链涉及把构造函数的原型赋值为另一个类型的实例。这样一来，子类就可以访问父类的所有属性和方法，就像基于类的继承那样。原型链的问题是所有继承的属性和方法都会在对象实例间共享，无法做到实例私有。盗用构造函数模式通过在子类构造函数中调用父类构造函数，可以避免这个问题。这样可以让每个实例继承的属性都是私有的，但要求类型只能通过构造函数模式来定义（因为子类不能访问父类原型上的方法）。目前最流行的继承模式是组合继承，即通过原型链继承共享的属性和方法，通过盗用构造函数继承实例属性。
+
+除上述模式之外，还有以下几种继承模式。
+
+- 原型式继承可以无须明确定义构造函数而实现继承，本质上是对给定对象执行浅复制。这种操作的结果之后还可以再进一步增强。
+- 与原型式继承紧密相关的是寄生式继承，即先基于一个对象创建一个新对象，然后再增强这个新对象，最后返回新对象。这个模式也被用在组合继承中，用于避免重复调用父类构造函数导致的浪费。
+- 寄生组合继承被认为是实现基于类型继承的最有效方式。
+
+
+
+# 9. 代理与反射
+
+ES6新增的代理和反射为开发者提供了拦截并向基本操作嵌入额外行为的能力。具体地说，可以给目标对象定义一个关联的代理对象，而这个代理对象可以作为抽象的目标对象来使用。在对目标对象的各种操作影响目标对象之前，可以在代理对象中对这些操作加以控制。由于代理是一种新的基础性语言能力，很多转译程序都不能把代理行为转换为之前的ECMAScript 代码，因为代理的行为实际上是无可替代的。为此，代理和反射只在百分之百支持它们的平台上有用。可以检测代理是否存在，不存在则提供后备代码。不过这会导致代码冗余，因此并不推荐。
+
+
+
+## 9.1 代理基础
+
+### 9.1.1 创建空代理
+
+最简单的代理是空代理，即除了作为一个抽象的目标对象，什么也不做。默认情况下，在代理对象上执行的所有操作都会无障碍地传播到目标对象。因此，在任何可以使用目标对象的地方，都可以通过同样的方式来使用与之关联的代理对象。
+
+代理是使用Proxy 构造函数创建的。这个构造函数接收两个参数：目标对象和处理程序对象。缺少其中任何一个参数都会抛出TypeError。要创建空代理，可以传一个简单的对象字面量作为处理程序对象，从而让所有操作畅通无阻地抵达目标对象。
+
+```javascript
+const target = {
+	id: 'target'
+};
+const handler = {};
+const proxy = new Proxy(target, handler);
+// id 属性会访问同一个值
+console.log(target.id); // target
+console.log(proxy.id); // target
+// 给目标属性赋值会反映在两个对象上
+// 因为两个对象访问的是同一个值
+target.id = 'foo';
+console.log(target.id); // foo
+console.log(proxy.id); // foo
+// 给代理属性赋值会反映在两个对象上
+// 因为这个赋值会转移到目标对象
+proxy.id = 'bar';
+console.log(target.id); // bar
+console.log(proxy.id); // bar
+// hasOwnProperty()方法在两个地方
+// 都会应用到目标对象
+console.log(target.hasOwnProperty('id')); // true
+console.log(proxy.hasOwnProperty('id')); // true
+// Proxy.prototype 是undefined
+// 因此不能使用instanceof 操作符
+console.log(target instanceof Proxy); // TypeError: Function has non-object prototype 'undefined' in instanceof check
+console.log(proxy instanceof Proxy); // TypeError: Function has non-object prototype 'undefined' in instanceof check
+// 严格相等可以用来区分代理和目标
+console.log(target === proxy); // false
+```
+
+
+
+### 9.1.2 定义捕获器
+
+使用代理的主要目的是可以定义捕获器（trap）。捕获器就是在处理程序对象中定义的“基本操作的拦截器”。每个处理程序对象可以包含零个或多个捕获器，每个捕获器都对应一种基本操作，可以直接或间接在代理对象上调用。每次在代理对象上调用这些基本操作时，代理可以在这些操作传播到目标对象之前先调用捕获器函数，从而拦截并修改相应的行为。
+
+例如，定义一个get()捕获器，在ECMAScript操作以某种形式调用get()时触发。
+
+```javascript
+const target = {
+	foo: 'bar'
+};
+const handler = {
+// 捕获器在处理程序对象中以方法名为键
+    get() {
+        return 'handler override';
+    }
+};
+const proxy = new Proxy(target, handler);
+console.log(target.foo); // bar
+console.log(proxy.foo); // handler override
+console.log(target['foo']); // bar
+console.log(proxy['foo']); // handler override
+console.log(Object.create(target)['foo']); // bar
+console.log(Object.create(proxy)['foo']); // handler override
+```
+
+例子中，通过proxy[property]、proxy.property 或Object.create(proxy)[property]等操作会触发基本的get()操作以获取属性。因为这些操作发生在代理对象上，就会触发get()捕获器。而在目标对象上执行这些操作则仍会产生正常的行为。
+
+
+
+### 9.1.3 捕获器参数和反射API
+
+所有捕获器都可以访问相应的参数，基于这些参数可以重建被捕获方法的原始行为。比如，get()捕获器会接收到目标对象、要查询的属性和代理对象三个参数。
+
+```javascript
+const target = {
+	foo: 'bar'
+};
+const handler = {
+    get(trapTarget, property, receiver) {
+    	return trapTarget[property];
+	}
+};
+const proxy = new Proxy(target, handler);
+console.log(proxy.foo); // bar
+console.log(target.foo); // bar
+```
+
+所有捕获器都可以基于自己的参数重建原始操作，但并非所有捕获器行为都像get()那么简单。可以通过调用全局Reflect 对象上（封装了原始行为）的同名方法来轻松重建。处理程序对象中所有可以捕获的方法都有对应的反射（Reflect）API 方法。这些方法与捕获器拦截的方法具有相同的名称和函数签名，而且也具有与被拦截方法相同的行为。因此，使用反射API 也可以像下面这样定义出空代理对象：
+
+```javascript
+const target = {
+	foo: 'bar'
+};
+const handler = {
+    get() {
+    	return Reflect.get(...arguments);
+    }
+};
+const proxy = new Proxy(target, handler);
+console.log(proxy.foo); // bar
+console.log(target.foo); // bar
+```
+
+
+
+### 9.1.4 捕获器不变式
+
+使用捕获器几乎可以改变所有基本方法的行为，但也不是没有限制。根据ECMAScript 规范，每个捕获的方法都知道目标对象上下文、捕获函数签名，而捕获处理程序的行为必须遵循“捕获器不变式”（trap invariant）。捕获器不变式因方法不同而异，但通常都会防止捕获器定义出现过于反常的行为。
+
+比如，如果目标对象有一个不可配置且不可写的数据属性，那么在捕获器返回一个与该属性不同的值时，会抛出TypeError：
+
+```javascript
+const target = {};
+Object.defineProperty(target, 'foo', {
+    configurable: false,
+    writable: false,
+    value: 'bar'
+});
+const handler = {
+    get() {
+    	return 'qux';
+    }
+};
+const proxy = new Proxy(target, handler);
+console.log(proxy.foo);
+// TypeError
+```
+
+
+
+### 9.1.5 可撤销代理
+
+有时候可能需要中断代理对象与目标对象之间的联系。对于使用new Proxy()创建的普通代理来说，这种联系会在代理对象的生命周期内一直持续存在。Proxy 也暴露了revocable()方法，这个方法支持撤销代理对象与目标对象的关联。撤销代理的操作是不可逆的。而且，撤销函数revoke()是幂等的，调用多少次的结果都一样。撤销代理之后再调用代理会抛出TypeError。
+
+```javascript
+var revocable = Proxy.revocable({}, {
+  	get(target, name) {
+    	return "[[" + name + "]]";
+  	}
+});
+var proxy = revocable.proxy;
+proxy.foo;              // "[[foo]]"
+
+revocable.revoke();
+
+console.log(proxy.foo); // 抛出 TypeError
+proxy.foo = 1           // 还是 TypeError
+delete proxy.foo;       // 又是 TypeError
+typeof proxy            // "object"，因为 typeof 不属于可代理操作
+
+```
+
+
+
+### 9.1.6 实用反射API
+
+某些情况下应该优先使用反射API，这是有一些理由的。
+
+
+
+#### 1. 反射API和对象API
+
+在使用反射API 时，要记住：
+
+1. 反射API 并不限于捕获处理程序；
+2. 反射API 并不限于捕获处理程序；
+
+通常，Object 上的方法适用于通用程序，而反射方法适用于细粒度的对象控制与操作。
+
+
+
+#### 2. 状态标记
+
+很多反射方法返回称作“状态标记”的布尔值，表示意图执行的操作是否成功。有时候，状态标记比那些返回修改后的对象或者抛出错误（取决于方法）的反射API 方法更有用。例如，可以使用反射API 对下面的代码进行重构：
+
+```javascript
+// 初始代码
+const o = {};
+try {
+    Object.defineProperty(o, 'foo', 'bar');
+    console.log('success');
+} catch(e) {
+	console.log('failure');
+}
+```
+
+在定义新属性的时候，Object.defineProperty()发生错误时会抛出错误，而Reflect.defineProperty()会返回false，因此可以用这个反射方法来重构上面的代码。
+
+```javascript
+// 重构后的代码
+const o = {};
+if(Reflect.defineProperty(o, 'foo', {value: 'bar'})) {
+	console.log('success');
+} else {
+	console.log('failure');
+}
+```
+
+以下反射方法都会提供状态标记：
+
+- Reflect.defineProperty()
+- Reflect.preventExtensions()
+- Reflect.setPrototypeOf()
+- Reflect.set()
+- Reflect.deleteProperty()
+
+
+
+#### 3. 用一等函数替代操作符
+
+以下反射方法提供只有通过操作符才能完成的操作。
+
+- Reflect.get()：可以替代对象属性访问操作符。
+- Reflect.set()：可以替代=赋值操作符。
+- Reflect.has()：可以替代in 操作符或with()。
+- Reflect.deleteProperty()：可以替代delete 操作符。
+- Reflect.construct()：可以替代new 操作符。
+
+
+
+#### 4. 安全地应用函数
+
+在通过apply 方法调用函数时，被调用的函数可能也定义了自己的apply 属性（虽然可能性极小）。为绕过这个问题，可以使用定义在Function 原型上的apply 方法，比如：
+
+` Function.prototype.apply.call(myFunc, thisVal, argumentList);`
+
+这种可怕的代码完全可以使用Reflect.apply 来避免：
+
+` Reflect.apply(myFunc, thisVal, argumentsList);`
+
+
+
+### 9.1.7 代理另一个代理
+
+代理可以拦截反射API 的操作，而这意味着完全可以创建一个代理，通过它去代理另一个代理。这样就可以在一个目标对象之上构建多层拦截网：
+
+```javascript
+const target = {
+	foo: 'bar'
+};
+const firstProxy = new Proxy(target, {
+    get() {
+        console.log('first proxy');
+        return Reflect.get(...arguments);
+}
+});
+const secondProxy = new Proxy(firstProxy, {
+    get() {
+        console.log('second proxy');
+        return Reflect.get(...arguments);
+    }
+});
+console.log(secondProxy.foo);
+// second proxy
+// first proxy
+// bar
+```
+
+
+
+### 9.1.8 代理的问题与不足
+
+代理是在ECMAScript 现有基础之上构建起来的一套新API，因此其实现已经尽力做到最好了。很
+大程度上，代理作为对象的虚拟层可以正常使用。但在某些情况下，代理也不能与现在的ECMAScript机制很好地协同。
+
+
+
+#### 1. 代理中的this
+
+代理潜在的一个问题来源是this 值。方法中的this 通常指向调用这个方法的对象：
+
+```javascript
+const target = {
+    thisValEqualsProxy() {
+    	return this === proxy;
+    }
+}
+const proxy = new Proxy(target, {});
+console.log(target.thisValEqualsProxy()); // false
+console.log(proxy.thisValEqualsProxy()); // true
+```
+
+调用代理上的任何方法，比如proxy.outerMethod()，而这个方法进而又会调用另一个方法，如this.innerMethod()，实际上都会调用proxy.innerMethod()。多数情况下，这是符合预期的行为。可是，如果目标对象依赖于对象标识，那就可能碰到意料之外的问题。
+
+```javascript
+const wm = new WeakMap();
+class User {
+    constructor(userId) {
+    	wm.set(this	, userId);
+    }
+    set id(userId) {
+        wm.set(this, userId);
+    }
+    get id() {
+        return wm.get(this);
+    }
+}
+```
+
+由于这个实现依赖User 实例的对象标识，在这个实例被代理的情况下就会出问题：
+
+```javascript
+const user = new User(123);
+console.log(user.id); // 123
+const userInstanceProxy = new Proxy(user, {});
+console.log(userInstanceProxy.id); // undefined
+```
+
+这是因为User 实例一开始使用目标对象作为WeakMap 的键，代理对象却尝试从自身取得这个实例。要解决这个问题，就需要重新配置代理，把代理User 实例改为代理User 类本身。之后再创建代理的实例就会以代理实例作为WeakMap 的键了：
+
+```javascript
+const UserClassProxy = new Proxy(User, {});
+const proxyUser = new UserClassProxy(456);
+console.log(proxyUser.id);
+```
+
+
+
+#### 2. 代理与内部插槽
+
+代理与内置引用类型（比如Array）的实例通常可以很好地协同，但有些ECMAScript 内置类型可能会依赖代理无法控制的机制，结果导致在代理上调用某些方法会出错。
+
+一个典型的例子就是Date 类型。根据ECMAScript 规范，Date 类型方法的执行依赖this 值上的内部槽位[[NumberDate]]。代理对象上不存在这个内部槽位，而且这个内部槽位的值也不能通过普通的get()和set()操作访问到，于是代理拦截后本应转发给目标对象的方法会抛出TypeError：
+
+```javascript
+const target = new Date();
+const proxy = new Proxy(target, {});
+console.log(proxy instanceof Date); // true
+proxy.getDate(); // TypeError: 'this' is not a Date object
+```
+
+
+
+## 9.2 代理捕获器与反射方法
+
+代理可以捕获13 种不同的基本操作。这些操作有各自不同的反射API 方法、参数、关联ECMAScript操作和不变式。只要在代理上调用，所有捕获器都会拦截它们对应的反射API 操作。
+
+
+
+### 9.2.1 get()
+
+get()捕获器会在获取属性值的操作中被调用。对应的反射API 方法为Reflect.get()。
+
+```javascript
+const myTarget = {};
+const proxy = new Proxy(myTarget, {
+    get(target, property, receiver) {
+        console.log('get()');
+        return Reflect.get(...arguments)
+	}
+});
+proxy.foo;
+// get()
+```
+
+
+
+#### 1. 返回值
+
+返回值无限制
+
+
+
+#### 2. 拦截的操作
+
+- proxy.property
+- proxy[property]
+- Object.create(proxy)[property]
+- Reflect.get(proxy, property, receiver)
+
+
+
+#### 3. 捕获器处理程序参数
+
+- target：目标对象。
+- property：引用的目标对象上的字符串键属性。
+- receiver：代理对象或继承代理对象的对象。
+
+
+
+#### 4. 捕获器不变式
+
+- 如果target.property 不可写且不可配置，则处理程序返回的值必须与target.property 匹配。
+- 如果target.property 不可配置且[[Get]]特性为undefined，处理程序的返回值也必须是undefined。
+
+
+
+### 9.2.2 set()
+
+set()捕获器会在设置属性值的操作中被调用。对应的反射API 方法为Reflect.set()。
+
+```javascript
+const myTarget = {};
+const proxy = new Proxy(myTarget, {
+    set(target, property, value, receiver) {
+        console.log('set()');
+        return Reflect.set(...arguments)
+	}
+});
+proxy.foo = 'bar';
+// set()
+```
+
+
+
+#### 1. 返回值
+
+返回true 表示成功；返回false 表示失败，严格模式下会抛出TypeError。
+
+
+
+#### 2. 拦截的操作
+
+- proxy.property = value
+- proxy[property] = value
+- Object.create(proxy)[property] = value
+- Reflect.set(proxy, property, value, receiver)
+
+
+
+#### 3. 捕获器处理程序参数
+
+- target：目标对象。
+- property：引用的目标对象上的字符串键属性。
+- value：要赋给属性的值。
+- receiver：接收最初赋值的对象。
+
+
+
+#### 4. 捕获器不变式
+
+- 如果target.property 不可写且不可配置，则不能修改目标属性的值。
+- 如果target.property 不可配置且[[Set]]特性为undefined，则不能修改目标属性的值。在严格模式下，处理程序中返回false 会抛出TypeError。
+
+
+
+### 9.2.3 has()
+
+has()捕获器会在in 操作符中被调用。对应的反射API 方法为Reflect.has()。
+
+```javascript
+const myTarget = {};
+const proxy = new Proxy(myTarget, {
+    has(target, property) {
+        console.log('has()');
+        return Reflect.has(...arguments)
+    }
+});
+'foo' in proxy;
+// has()
+```
+
+
+
+#### 1. 返回值
+
+has()必须返回布尔值，表示属性是否存在。返回非布尔值会被转型为布尔值。
+
+
+
+#### 2. 拦截的操作
+
+- property in proxy
+- property in Object.create(proxy)
+- with(proxy) {(property);}
+- Reflect.has(proxy, property)
+
+
+
+#### 3. 捕获器处理程序参数
+
+- target：目标对象。
+- property：引用的目标对象上的字符串键属性。
+
+
+
+#### 4. 捕获器不变式
+
+- 如果target.property 存在且不可配置，则处理程序必须返回true。
+- 如果target.property 存在且目标对象不可扩展，则处理程序必须返回true。
+
+
+
+### 9.2.4 defineProperty()
+
+defineProperty()捕获器会在Object.defineProperty()中被调用。对应的反射API 方法为Reflect.defineProperty()。
+
+```javascript
+const myTarget = {};
+const proxy = new Proxy(myTarget, {
+    defineProperty(target, property, descriptor) {
+        console.log('defineProperty()');
+        return Reflect.defineProperty(...arguments)
+    }
+});
+Object.defineProperty(proxy, 'foo', { value: 'bar' });
+// defineProperty()
+```
+
+
+
+#### 1. 返回值
+
+defineProperty()必须返回布尔值，表示属性是否成功定义。返回非布尔值会被转型为布尔值。
+
+
+
+#### 2. 拦截的操作
+
+- Object.defineProperty(proxy, property, descriptor)
+- Reflect.defineProperty(proxy, property, descriptor)
+
+
+
+#### 3. 捕获器处理程序的参数
+
+- target：目标对象。
+- property：引用的目标对象上的字符串键属性。
+- descriptor：包含可选的enumerable、configurable、writable、value、get 和set
+  定义的对象。
+
+
+
+#### 4. 捕获器不变式
+
+- 如果目标对象不可扩展，则无法定义属性。
+- 如果目标对象有一个可配置的属性，则不能添加同名的不可配置属性。
+- 如果目标对象有一个不可配置的属性，则不能添加同名的可配置属性。
+
+
+
+### 9.2.5 getOwnPropertyDescriptor()
+
+getOwnPropertyDescriptor()捕获器会在Object.getOwnPropertyDescriptor()中被调用。对应的反射API 方法为Reflect.getOwnPropertyDescriptor()。
+
+```javascript
+const myTarget = {};
+const proxy = new Proxy(myTarget, {
+    getOwnPropertyDescriptor(target, property) {
+        console.log('getOwnPropertyDescriptor()');
+        return Reflect.getOwnPropertyDescriptor(...arguments)
+    }
+});
+Object.getOwnPropertyDescriptor(proxy, 'foo');
+// getOwnPropertyDescriptor()
+```
+
+
+
+#### 1. 返回值
+
+getOwnPropertyDescriptor()必须返回对象，或者在属性不存在时返回undefined。
+
+
+
+#### 2. 拦截的操作
+
+- Object.getOwnPropertyDescriptor(proxy, property)
+- Reflect.getOwnPropertyDescriptor(proxy, property)
+
+
+
+#### 3. 捕获器处理程序参数
+
+- target：目标对象。
+- property：引用的目标对象上的字符串键属性。
+
+
+
+#### 4. 捕获器不变式
+
+- 如果自有的target.property 存在且不可配置，则处理程序必须返回一个表示该属性存在的对象。
+- 如果自有的target.property 存在且可配置，则处理程序必须返回表示该属性可配置的对象。
+- 如果自有的target.property 存在且target 不可扩展，则处理程序必须返回一个表示该属性存在的对象。
+- 如果target.property 不存在且target 不可扩展，则处理程序必须返回undefined 表示该属性不存在。
+- 如果target.property 不存在，则处理程序不能返回表示该属性可配置的对象。
+
+
+
+### 9.2.6 deleteProperty()
+
+deleteProperty()捕获器会在delete 操作符中被调用。对应的反射API 方法为Reflect.deleteProperty()。
+
+```javascript
+const myTarget = {};
+const proxy = new Proxy(myTarget, {
+    deleteProperty(target, property) {
+        console.log('deleteProperty()');
+        return Reflect.deleteProperty(...arguments)
+	}
+});
+delete proxy.foo
+// deleteProperty()
+```
+
+#### 1. 返回值
+
+deleteProperty()必须返回布尔值，表示删除属性是否成功。返回非布尔值会被转型为布尔值。
+
+
+
+#### 2. 拦截的操作
+
+- delete proxy.property
+- delete proxy[property]
+- Reflect.deleteProperty(proxy, property)
+
+
+
+#### 3. 捕获器处理程序参数
+
+- target：目标对象。
+- property：引用的目标对象上的字符串键属性。
+
+
+
+#### 4. 捕获器不变式
+
+如果自有的target.property 存在且不可配置，则处理程序不能删除这个属性。
+
+
+
+### 9.2.7 ownKeys()
+
+ownKeys()捕获器会在Object.keys()及类似方法中被调用。对应的反射API 方法为Reflect.ownKeys()。
+
+```javascript
+const myTarget = {};
+const proxy = new Proxy(myTarget, {
+    ownKeys(target) {
+        console.log('ownKeys()');
+        return Reflect.ownKeys(...arguments)
+    }
+});
+Object.keys(proxy);
+// ownKeys()
+```
+
+
+
+#### 1. 返回值
+
+ownKeys()必须返回包含字符串或符号的可枚举对象。
+
+
+
+#### 2. 拦截的操作
+
+- Object.getOwnPropertyNames(proxy)
+- Object.getOwnPropertySymbols(proxy)
+- Object.keys(proxy)
+- Reflect.ownKeys(proxy)
+
+
+
+#### 3. 捕获器处理程序参数
+
+- target：目标对象。
+
+
+
+#### 4. 捕获器不变式
+
+返回的可枚举对象必须包含target 的所有不可配置的自有属性。
+
+如果target 不可扩展，则返回可枚举对象必须准确地包含自有属性键。
+
+
+
+### 9.2.8 getPrototypeOf()
+
+getPrototypeOf()捕获器会在Object.getPrototypeOf()中被调用。对应的反射API 方法为Reflect.getPrototypeOf()。
+
+```javascript
+const myTarget = {};
+const proxy = new Proxy(myTarget, {
+    getPrototypeOf(target) {
+        console.log('getPrototypeOf()');
+        return Reflect.getPrototypeOf(...arguments)
+    }
+});
+Object.getPrototypeOf(proxy);
+// getPrototypeOf()
+```
+
+
+
+#### 1. 返回值
+
+getPrototypeOf()必须返回对象或null。
+
+
+
+#### 2. 拦截的操作
+
+- Object.getPrototypeOf(proxy)
+- Reflect.getPrototypeOf(proxy)
+- proxy.\__proto__
+- Object.prototype.isPrototypeOf(proxy)
+- proxy instanceof Object
+
+
+
+#### 3. 捕获器处理程序参数
+
+- target：目标对象。
+
+
+
+#### 4. 捕获器不变式
+
+如果target 不可扩展，则Object.getPrototypeOf(proxy)唯一有效的返回值就是Object.getPrototypeOf(target)的返回值。
+
+
+
+### 9.2.9 setPrototypeOf()
+
+setPrototypeOf()捕获器会在Object.setPrototypeOf()中被调用。对应的反射API 方法为Reflect.setPrototypeOf()。
+
+```javascript
+const myTarget = {};
+const proxy = new Proxy(myTarget, {
+    setPrototypeOf(target, prototype) {
+        console.log('setPrototypeOf()');
+        return Reflect.setPrototypeOf(...arguments)
+	}
+});
+Object.setPrototypeOf(proxy, Object);
+// setPrototypeOf()
+```
+
+
+
+#### 1. 返回值
+
+setPrototypeOf()必须返回布尔值，表示原型赋值是否成功。返回非布尔值会被转型为布尔值。
+
+
+
+#### 2. 拦截的操作
+
+- Object.setPrototypeOf(proxy)
+- Reflect.setPrototypeOf(proxy)
+
+
+
+#### 3. 捕获器处理程序参数
+
+- target：目标对象。
+- prototype：target 的替代原型，如果是顶级原型则为null。
+
+
+
+#### 4. 捕获器不变式
+
+- 如果target 不可扩展，则唯一有效的prototype 参数就是Object.getPrototypeOf(target)
+  的返回值。
+
+
+
+### 9.2.10 isExtensible()
+
+isExtensible()捕获器会在Object.isExtensible()中被调用。对应的反射API 方法为Reflect.isExtensible()。
+
+```javascript
+const myTarget = {};
+const proxy = new Proxy(myTarget, {
+    isExtensible(target) {
+        console.log('isExtensible()');
+        return Reflect.isExtensible(...arguments)
+    }
+});
+Object.isExtensible(proxy);
+// isExtensible()
+```
+
+
+
+#### 1. 返回值
+
+isExtensible()必须返回布尔值，表示target 是否可扩展。返回非布尔值会被转型为布尔值。
+
+
+
+#### 2. 拦截的操作
+
+- Object.isExtensible(proxy)
+- Reflect.isExtensible(proxy)
+
+
+
+#### 3. 捕获器处理程序参数
+
+- target：目标对象。
+
+
+
+#### 4. 捕获器不变式
+
+如果target 可扩展，则处理程序必须返回true。
+
+如果target 不可扩展，则处理程序必须返回false。
+
+
+
+### 9.2.11 preventExtensions()
+
+preventExtensions()捕获器会在Object.preventExtensions()中被调用。对应的反射API方法为Reflect.preventExtensions()。
+
+```javascript
+const myTarget = {};
+const proxy = new Proxy(myTarget, {
+    preventExtensions(target) {
+        console.log('preventExtensions()');
+        return Reflect.preventExtensions(...arguments)
+    }
+});
+Object.preventExtensions(proxy);
+// preventExtensions()
+```
+
+
+
+#### 1. 返回值
+
+preventExtensions()必须返回布尔值，表示target 是否已经不可扩展。返回非布尔值会被转型为布尔值。
+
+
+
+#### 2. 拦截的操作
+
+- Object.preventExtensions(proxy)
+- Reflect.preventExtensions(proxy)
+
+
+
+#### 3. 捕获器处理程序参数
+
+- target：目标对象。
+
+
+
+#### 4. 捕获器不变式
+
+如果Object.isExtensible(proxy)是false，则处理程序必须返回true。
+
+
+
+### 9.2.12 apply()
+
+apply()捕获器会在调用函数时中被调用。对应的反射API 方法为Reflect.apply()。
+
+```javascript
+const myTarget = () => {};
+const proxy = new Proxy(myTarget, {
+    apply(target, thisArg, ...argumentsList) {
+        console.log('apply()');
+        return Reflect.apply(...arguments)
+    }
+});
+proxy();
+// apply()
+```
+
+
+
+#### 1. 返回值
+
+返回值无限制。
+
+
+
+#### 2. 拦截的操作
+
+- proxy(...argumentsList)
+- Function.prototype.apply(thisArg, argumentsList)
+- Function.prototype.call(thisArg, ...argumentsList)
+- Reflect.apply(target, thisArgument, argumentsList)
+
+
+
+#### 3. 捕获器处理程序参数
+
+- target：目标对象。
+- thisArg：调用函数时的this 参数。
+- argumentsList：调用函数时的参数列表
+
+
+
+#### 4. 捕获器不变式
+
+target 必须是一个函数对象。
+
+
+
+### 9.2.13 construct()
+
+construct()捕获器会在new 操作符中被调用。对应的反射API 方法为Reflect.construct()。
+
+```javascript
+const myTarget = function() {};
+const proxy = new Proxy(myTarget, {
+    construct(target, argumentsList, newTarget) {
+        console.log('construct()');
+        return Reflect.construct(...arguments)
+    }
+});
+new proxy;
+// construct()
+```
+
+
+
+#### 1. 返回值
+
+construct()必须返回一个对象。
+
+
+
+#### 2. 拦截的操作
+
+- new proxy(...argumentsList)
+- Reflect.construct(target, argumentsList, newTarget)
+
+
+
+#### 3. 捕获器处理程序参数
+
+- target：目标构造函数。
+- argumentsList：传给目标构造函数的参数列表。
+- newTarget：最初被调用的构造函数。
+
+
+
+#### 4. 捕获器不变式
+
+target 必须可以用作构造函数。
+
+
+
+## 9.3 代理模式
+
+使用代理可以在代码中实现一些有用的编程模式。
+
+
+
+### 9.3.1 跟踪属性访问
+
