@@ -3168,7 +3168,7 @@ p.sayName(); // My name is Jake
 
 
 
-##### 5. 迭代器与生成器方法
+#### 5. 迭代器与生成器方法
 
 类定义语法支持在原型和类本身上定义生成器方法，类似在对象上定义生成器。
 
@@ -4401,4 +4401,1092 @@ target 必须可以用作构造函数。
 
 
 ### 9.3.1 跟踪属性访问
+
+通过捕获get、set 和has 等操作，可以知道对象属性什么时候被访问、被查询。把实现相应捕获器的某个对象代理放到应用中，可以监控这个对象何时在何处被访问过。
+
+```javascript
+const user = {
+	name: 'Jake'
+};
+const proxy = new Proxy(user, {
+    get(target, property, receiver) {
+        console.log(`Getting ${property}`);
+        return Reflect.get(...arguments);
+    },
+    set(target, property, value, receiver) {
+        console.log(`Setting ${property}=${value}`);
+        return Reflect.set(...arguments);
+    }
+});
+proxy.name; // Getting name
+proxy.age = 27; // Setting age=27
+```
+
+
+
+### 9.3.2 隐藏属性
+
+代理的内部实现对外部代码是不可见的，因此要隐藏目标对象上的属性也轻而易举。比如：
+
+```javascript
+const hiddenProperties = ['foo', 'bar'];
+const targetObject = {
+    foo: 1,
+    bar: 2,
+    baz: 3
+};
+// 通过代理来拦截对象获取属性或者判断是否含有某个属性
+const proxy = new Proxy(targetObject, {
+    get(target, property) {
+        if (hiddenProperties.includes(property)) {
+        	return undefined;
+        } else {
+        	return Reflect.get(...arguments);
+        }
+    },
+    has(target, property) {
+        if (hiddenProperties.includes(property)) {
+            return false;
+        } else {
+            return Reflect.has(...arguments);
+        }
+    }
+});
+// get()
+console.log(proxy.foo); // undefined
+console.log(proxy.bar); // undefined
+console.log(proxy.baz); // 3
+// has()
+console.log('foo' in proxy); // false
+console.log('bar' in proxy); // false
+console.log('baz' in proxy); // true
+```
+
+
+
+### 9.3.3 属性验证
+
+因为所有赋值操作都会触发set()捕获器，所以可以根据所赋的值决定是允许还是拒绝赋值。
+
+```javascript
+const target = {
+	onlyNumbersGoHere: 0
+};
+const proxy = new Proxy(target, {
+    set(target, property, value) {
+        if (typeof value !== 'number') {
+        	return false;
+        } else {
+        	return Reflect.set(...arguments);
+        }
+    }
+});
+proxy.onlyNumbersGoHere = 1;
+console.log(proxy.onlyNumbersGoHere); // 1
+proxy.onlyNumbersGoHere = '2';
+console.log(proxy.onlyNumbersGoHere); // 1
+```
+
+
+
+### 9.3.4 函数与构造函数参数验证
+
+跟保护和验证对象属性类似，也可对函数和构造函数参数进行审查。比如，可以让函数只接收某种类型的值：
+
+```javascript
+function median(...nums) {
+	return nums.sort()[Math.floor(nums.length / 2)];
+}
+const proxy = new Proxy(median, {
+    apply(target, thisArg, argumentsList) {
+        for (const arg of argumentsList) {
+            if (typeof arg !== 'number') {
+            	throw 'Non-number argument provided';
+            }
+        }
+        return Reflect.apply(...arguments);
+    }
+});
+console.log(proxy(4, 7, 1)); // 4
+console.log(proxy(4, '7', 1));
+// Error: Non-number argument provided
+```
+
+类似地，可以要求实例化时必须给构造函数传参：
+
+```javascript
+class User {
+    constructor(id) {
+    	this.id_ = id;
+    }
+}
+const proxy = new Proxy(User, {
+    construct(target, argumentsList, newTarget) {
+        if (argumentsList[0] === undefined) {
+        	throw 'User cannot be instantiated without id';
+        } else {
+        	return Reflect.construct(...arguments);
+    	}
+	}
+});
+new proxy(1);
+new proxy();
+// Error: User cannot be instantiated without id
+```
+
+
+
+### 9.3.5 数据绑定与可观察对象
+
+通过代理可以把运行时中原本不相关的部分联系到一起。这样就可以实现各种模式，从而让不同的代码互操作。
+
+比如，可以将被代理的类绑定到一个全局实例集合，让所有创建的实例都被添加到这个集合中：
+
+```javascript
+const userList = [];
+class User {
+    constructor(name) {
+    	this.name_ = name;
+    }
+}
+const proxy = new Proxy(User, {
+    construct() {
+        const newUser = Reflect.construct(...arguments);
+        userList.push(newUser);
+        return newUser;
+    }
+});
+new proxy('John');
+new proxy('Jacob');
+new proxy('Jingleheimerschmidt');
+console.log(userList); // [User {}, User {}, User{}]
+```
+
+
+
+## 9.4 小结
+
+代理是ES6 新增的令人兴奋和动态十足的新特性。尽管不支持向后兼容，但它开辟出了
+一片前所未有的JavaScript 元编程及抽象的新天地。
+
+从宏观上看，代理是真实JavaScript 对象的透明抽象层。代理可以定义包含捕获器的处理程序对象，而这些捕获器可以拦截绝大部分JavaScript 的基本操作和方法。在这个捕获器处理程序中，可以修改任何基本操作的行为，当然前提是遵从捕获器不变式。
+
+与代理如影随形的反射API，则封装了一整套与捕获器拦截的操作相对应的方法。可以把反射API看作一套基本操作，这些操作是绝大部分JavaScript 对象API 的基础。
+
+代理的应用场景是不可限量的。开发者使用它可以创建出各种编码模式，比如（但远远不限于）跟踪属性访问、隐藏属性、阻止修改或删除属性、函数参数验证、构造函数参数验证、数据绑定，以及可观察对象。
+
+
+
+# 10. 函数
+
+函数的本质实际上是对象。每个函数都是Function类型的实例，而Function 也有属性和方法，跟其他引用类型一样。因为函数是对象，所以函数名就是指向函数对象的指针，而且不一定与函数本身紧密绑定。
+
+函数有以下几种定义方式：
+
+```javascript
+// 函数声明
+function sum (num1, num2) {
+	return num1 + num2;
+}
+```
+
+```javascript
+// 函数表达式
+let sum = function(num1, num2) {
+	return num1 + num2;
+};
+```
+
+```javascript
+// 箭头函数
+let sum = (num1, num2) => {
+	return num1 + num2;
+};
+```
+
+```javascript
+// Function构造函数，最后一个参数为函数体，之前的参数为函数参数（不推荐使用）
+let sum = new Function("num1", "num2", "return num1 + num2");
+```
+
+
+
+## 10.1 箭头函数
+
+ES6新增了使用胖箭头（=>）语法定义函数表达式的能力。很大程度上，箭头函数实例化的函数对象与正式的函数表达式创建的函数对象行为是相同的。任何可以使用函数表达式的地方，都可以使用箭头函数：
+
+```javascript
+let arrowSum = (a, b) => {
+	return a + b;
+};
+let functionExpressionSum = function(a, b) {
+	return a + b;
+};
+console.log(arrowSum(5, 8)); // 13
+console.log(functionExpressionSum(5, 8)); // 13
+```
+
+箭头函数虽然语法简洁，但也有很多场合不适用。箭头函数不能使用arguments、super 和new.target，也不能用作构造函数。此外，箭头函数也没有prototype 属性。
+
+
+
+## 10.2 函数名
+
+因为函数名就是指向函数的指针，所以它们跟其他包含对象指针的变量具有相同的行为。这意味着一个函数可以有多个名称，如下所示：
+
+```javascript
+function sum(num1, num2) {
+	return num1 + num2;
+}
+console.log(sum(10, 10)); // 20
+//不带括号的函数名会访问函数指针，而非执行函数
+let anotherSum = sum;
+console.log(anotherSum(10, 10)); // 20
+sum = null;
+console.log(anotherSum(10, 10)); // 20
+```
+
+ECMAScript 6 的所有函数对象都会暴露一个只读的name 属性，其中包含关于函数的信息。多数情况下，这个属性中保存的就是一个函数标识符，或者说是一个字符串化的变量名。即使函数没有名称，也会如实显示成空字符串。如果它是使用Function 构造函数创建的，则会标识成"anonymous"：
+
+```javascript
+function foo() {}
+let bar = function() {};
+let baz = () => {};
+console.log(foo.name); // foo
+console.log(bar.name); // bar
+console.log(baz.name); // baz
+console.log((() => {}).name); //（空字符串）
+console.log((new Function()).name); // anonymous
+```
+
+
+
+## 10.3 理解参数
+
+ECMAScript中的函数既不关心传入的参数个数，也不关心传入参数的数据类型，也不关心传入的参数是否被使用。这样的原因是因为ECMAScript函数的参数在内部表现为一个数组。在函数被调用的时候总会接受一个数组，函数并不关心数组的内容。在使用function关键字定义（非箭头）函数的时候，可以在函数内部访问arguments对象，来获得传入的每个参数值。arguments对象是一个类数组对象，因此可以使用中括号语法来访问其中的元素。可以通过arguments.length属性来获得函数的数量。
+
+```javascript
+// 第一种写法
+function sayHi(name, message) {
+	console.log("Hello " + name + ", " + message);
+}
+
+// 第二种写法
+function sayHi() {
+	console.log("Hello " + arguments[0] + ", " + arguments[1]);
+}
+```
+
+arguments对象中的值始终与对应的命名参数同步：
+
+```javascript
+function doAdd(num1, num2) {
+    arguments[1] = 10;
+    console.log(arguments[0] + num2);
+}
+```
+
+上方的代码会将arguments[1]对应的参数num2的在函数体中的值修改为10。但这并不意味着它们都访问同一块内存地址，它们在内存中分开存储，但始终保持同步。
+
+对于命名参数而言，如果调用函数时没有传这个参数，那么它的值就是undefined。这就类似于定义了变量而没有初始化。比如，如果只给doAdd()传了一个参数，那么num2 的值就是undefined。
+
+严格模式下，arguments 会有一些变化。首先，像前面那样给arguments[1]赋值不会再影响num2的值。就算把arguments[1]设置为10，num2 的值仍然还是传入的值。其次，在函数中尝试重写arguments 对象会导致语法错误。（代码也不会执行。）
+
+
+
+#### 箭头函数中的参数
+
+如果函数是使用箭头语法定义的，那么传给函数的参数将不能使用arguments 关键字访问，而只能通过定义的命名参数访问。
+
+```javascript
+function foo() {
+	console.log(arguments[0]);
+}
+foo(5); // 5
+let bar = () => {
+	console.log(arguments[0]);
+};
+bar(5); // ReferenceError: arguments is not defined
+```
+
+虽然箭头函数中没有arguments 对象，但可以在包装函数中把它提供给箭头函数：
+
+```javascript
+function foo() {
+    let bar = () => {
+        console.log(arguments[0]); // 5
+    };
+    bar();
+}
+foo(5);
+```
+
+
+
+## 10.4 没有重载
+
+ECMAScript 函数不能像传统编程那样重载。在其他语言比如Java 中，一个函数可以有两个定义，只要签名（接收参数的类型和数量）不同就行。如前所述，ECMAScript 函数没有签名，因为参数是由包含零个或多个值的数组表示的。没有函数签名，自然也就没有重载。如果在ECMAScript 中定义了两个同名函数，则后定义的会覆盖先定义的。如果想通过一个函数名实现多种操作，可以通过检查参数的类型和数量（arguments），来分别判断并执行不同的逻辑来模拟重载。也可以通过“函数名就是指向函数的指针”来理解为什么没有函数重载。
+
+
+
+## 10.5 默认参数值
+
+ES6之后可以显式定义默认参数，可以在传入参数后添加=来指定默认值。
+
+```
+function makeKing(name = 'Henry') {
+	return `King ${name} VIII`;
+}
+console.log(makeKing('Louis')); // 'King Louis VIII'
+console.log(makeKing()); // 'King Henry VIII'
+```
+
+在使用默认函数的时候，arguments对象的值不反应参数的默认值，只反映传给函数的参数。修改命名参数也不会影响arguments对象，它始终以调用函数传入的值为准：
+
+```javascript
+function makeKing(name = 'Henry') {
+    name = 'Louis';
+    return `King ${arguments[0]}`;
+}
+console.log(makeKing()); // 'King undefined'
+console.log(makeKing('Louis')); // 'King Louis'
+```
+
+
+
+#### 默认参数作用域与暂时性死区
+
+默认参数可以定义为变量，也可以动态调用函数，因此函数参数是在某个作用域里求值的，给多个参数定义默认值实际上跟使用let关键字顺序声明变量一样。
+
+```javascript
+// 默认参数
+function makeKing(name = 'Henry', numerals = 'VIII') {
+	return `King ${name} ${numerals}`;
+}
+console.log(makeKing()); // King Henry VIII
+```
+
+```javascript
+// 默认参数会按照定义它们的顺序依次被初始化，类似以下结果
+function makeKing() {
+    let name = 'Henry';
+    let numerals = 'VIII';
+    return `King ${name} ${numerals}`;
+}
+```
+
+因为参数是按照顺序初始化的，所以后定义默认值的参数可以引用先定义的参数。
+
+参数初始化的顺序遵循“暂时性死区”的规则，即前面定义的参数不能引用后面定义的，引用了会抛出错误。
+
+参数也存在与自己的作用域里，它们不能引用函数体内部的作用域变量。
+
+
+
+## 10.6 参数扩展与收集
+
+ES6新增了扩展操作符，可以用来简洁地操作和组合集合数据。扩展操作符使用的场景是函数定义中的参数列表，既可以用于调用参数时传参，也可以用于定义函数参数。
+
+
+
+### 10.6.1 扩展参数
+
+```javascript
+// 将一个数组的元素分别传入函数
+let values = [1, 2, 3, 4];
+function getSum() {
+    let sum = 0;
+    for (let i = 0; i < arguments.length; ++i) {
+    	sum += arguments[i];
+    }
+    return sum;
+}
+
+// 不使用扩展运算符
+console.log(getSum.apply(null, values)); // 10
+// 使用扩展运算符（直接拆分数组）
+console.log(getSum(...values)); // 10
+```
+
+因为数组的长度是已知的，所以在使用扩展运算符传参的时候，可以在其前后传入其他值，包括使用扩展运算符传入其他参数。
+
+```javascript
+console.log(getSum(-1, ...values)); // 9
+console.log(getSum(...values, 5)); // 15
+console.log(getSum(-1, ...values, 5)); // 14
+console.log(getSum(...values, ...[5,6,7])); // 28
+```
+
+
+
+### 10.6.2 收集参数
+
+扩展运算符除了可以拆分数组，也可以收集参数合并成数组
+
+```javascript
+function getSum(...values) {
+// 顺序累加values 中的所有值
+// 初始值的总和为0
+	return values.reduce((x, y) => x + y, 0);
+}
+console.log(getSum(1,2,3)); // 6
+```
+
+收集参数的前面如果还有命名参数，则会收集传入的剩余参数，如果没有会得到一个空数组。因为收集参数的结果是可变的，所以只能作为最后一个参数。
+
+```javascript
+// 不可以
+function getProduct(...values, lastValue) {}
+// 可以
+function ignoreFirst(firstValue, ...values) {
+	console.log(values);
+}
+ignoreFirst(); // []
+ignoreFirst(1); // []
+ignoreFirst(1,2); // [2]
+ignoreFirst(1,2,3); // [2, 3]
+```
+
+箭头函数虽然不支持arguments 对象，但支持收集参数的定义方式，因此也可以实现与使用arguments 一样的逻辑：
+
+```javascript
+let getSum = (...values) => {
+	return values.reduce((x, y) => x + y, 0);
+}
+console.log(getSum(1,2,3)); // 6
+```
+
+使用收集参数的时候也不影响arguments对象，它仍然会反映调用时传给函数的参数：
+
+```javascript
+function getSum(...values) {
+    console.log(arguments.length); // 3
+    console.log(arguments); // [1, 2, 3]
+    console.log(values); // [1, 2, 3]
+}
+console.log(getSum(1,2,3));
+```
+
+
+
+## 10.7 函数声明与函数表达式
+
+JavaScript引擎在加载数据的时候对函数声明和函数表达式是区别对待的。JavaScript 引擎在任何代码执行之前，会先读取函数声明，并在执行上下文中生成函数定义。而函数表达式必须等到代码执行到它那一行，才会在执行上下文中生成函数定义。
+
+```javascript
+// 没问题
+console.log(sum(10, 10));
+function sum(num1, num2) {
+	return num1 + num2;
+}
+```
+
+函数声明会在任何代码执行之前先被读取并添加到执行上下文。这个过程被称为函数声明提升。在执行代码时，JavaScript引擎会先执行一遍扫描，把发现的函数声明提升到源代码树的顶部因此即使函数定义出现在调用它们的代码之后，引擎也会把函数声明提升到顶部。如果把前面代码中的函数声明改为等价的函数表达式，那么执行的时候就会出错：
+
+```javascript
+// 会出错
+console.log(sum(10, 10));
+var sum = function(num1, num2) {
+	return num1 + num2;
+};
+```
+
+上面的代码之所以会出错，是因为这个函数定义包含在一个变量初始化语句中，而不是函数声明中。即使var可以变量声明提升，sum也会被初始化为undefined而不是函数。
+
+除了函数什么时候真正有定义这个区别之外，这两种语法是等价的。
+
+
+
+## 10.8 函数作为值
+
+因为函数名在ECMAScript 中就是变量，所以函数可以用在任何可以使用变量的地方。这意味着不仅可以把函数作为参数传给另一个函数，而且还可以在一个函数中返回另一个函数。
+
+```javascript
+function callSomeFunction(someFunction, someArgument) {
+	return someFunction(someArgument);
+}
+function add10(num) {
+	return num + 10;
+}
+let result1 = callSomeFunction(add10, 10);
+console.log(result1); // 20
+function getGreeting(name) {
+	return "Hello, " + name;
+}
+let result2 = callSomeFunction(getGreeting, "Nicholas");
+console.log(result2); // "Hello, Nicholas"
+```
+
+可以用在sort()函数中的比较函数
+
+```javascript
+function createComparisonFunction(propertyName) {
+    return function(object1, object2) {
+        let value1 = object1[propertyName];
+        let value2 = object2[propertyName];
+        if (value1 < value2) {
+        return -1;
+        } else if (value1 > value2) {
+        	return 1;
+        } else {
+        	return 0;
+        }
+    };
+}
+
+let data = [
+    {name: "Zachary", age: 28},
+    {name: "Nicholas", age: 29}
+];
+data.sort(createComparisonFunction("name"));
+console.log(data[0].name); // Nicholas
+data.sort(createComparisonFunction("age"));
+console.log(data[0].name); // Zachary
+```
+
+
+
+## 10.9 函数内部
+
+在ECMAScript 5 中，函数内部存在两个特殊的对象：arguments 和this。ECMAScript 6 又新增了new.target 属性。
+
+
+
+### 10.9.1 arguments
+
+arguments对象是一个类数组对象，包含调用函数时传入的参数。这个对象只有在使用function关键字定义函数（相对于箭头函数）的时候才会有。虽然主要用于包含函数参数，但arguments对象其实还有一个callee属性，是一个指向arguments对象所在函数的指针。
+
+```javascript
+// 阶乘函数
+function factorial(num) {
+    if (num <= 1) {
+    	return 1;
+    } else {
+    	return num * factorial(num - 1);
+    }
+}
+```
+
+上面的阶乘函数通过递归调用自身来实现，但这个函数想要正确执行就必须保证函数名为factorial，从而导致了紧密耦合。可以使用arguments.callee来让函数逻辑和函数名解耦：
+
+```javascript
+function factorial(num) {
+    if (num <= 1) {
+    	return 1;
+    } else {
+    	return num * arguments.callee(num - 1);
+    }
+}
+```
+
+这个重写之后的factorial()函数已经用arguments.callee 代替了之前硬编码的factorial。这意味着无论函数叫什么名称，都可以引用正确的函数。考虑下面的情况：
+
+```javascript
+let trueFactorial = factorial;
+factorial = function() {
+	return 0;
+};
+console.log(trueFactorial(5)); // 120
+console.log(factorial(5)); // 0
+```
+
+上面的代码，通过trueFactorial变量来保存factorial函数的指针，后续factorial函数虽然被重写，但并不会影响调用trueFactorial()函数的返回结果。
+
+
+
+### 10.9.2 this
+
+另一个特殊对象是this，它在标准函数和箭头函数中有不同的行为。
+
+在标准函数中，this 引用的是把函数当成方法调用的上下文对象，这时候通常称其为this 值（在
+网页的全局上下文中调用函数时，this 指向windows）。
+
+```javascript
+window.color = 'red';
+let o = {
+	color: 'blue'
+};
+function sayColor() {
+	console.log(this.color);
+}
+sayColor(); // 'red'
+o.sayColor = sayColor;
+o.sayColor(); // 'blue'
+```
+
+定义在全局上下文中的函数sayColor()使用了this对象。这个this 到底引用哪个对象必须到函数被调用时才能确定。因此这个值在代码执行的过程中可能会变。如果在全局上下文中调用sayColor()函数，那么此时的this指向window，输出为"red"。将sayColor()函数赋值给对象o，此时调用对象o中的sayColor()函数时，this指向o，因此输出o.color，为"blue"。
+
+在箭头函数中，this 引用的是定义箭头函数的上下文。下面的例子演示了这一点。在对sayColor()的两次调用中，this 引用的都是window 对象，因为这个箭头函数是在window 上下文中定义的：
+
+```javascript
+window.color = 'red';
+let o = {
+	color: 'blue'
+};
+let sayColor = () => console.log(this.color);
+sayColor(); // 'red'
+o.sayColor = sayColor;
+o.sayColor(); // 'red'
+```
+
+因此，可以使用箭头函数来解决在事件回调或定时回调中调用某个函数时，this 值指向的并非想要的对象。
+
+```javascript
+function King() {
+this.royaltyName = 'Henry';
+    // this 引用 King 的实例
+    setTimeout(() => console.log(this.royaltyName), 1000);
+}
+function Queen() {
+this.royaltyName = 'Elizabeth';
+    // 标准函数setTimeout中this始终引用 window 对象
+    setTimeout(function() { console.log(this.royaltyName); }, 1000);
+}
+new King(); // Henry
+new Queen(); // undefined
+```
+
+
+
+### 10.9.3 caller
+
+ES5会给函数对象上添加一个属性：caller。这个属性引用的是调用当前函数的函数，或者如果是在全局作用域中调用的则为null。如：
+
+```javascript
+function outer() {
+	inner();
+}
+function inner() {
+	console.log(inner.caller);
+    //非严格模式下可以使用arguments.callee.caller来降低耦合度
+    // console.log(arguments.callee.caller);
+}
+outer(); // function outer() { inner(); }
+```
+
+在严格模式下访问arguments.callee 会报错。ECMAScript 5 也定义了arguments.caller，但在严格模式下访问它会报错，在非严格模式下则始终是undefined。这是为了分清arguments.caller和函数的caller 而故意为之的。而作为对这门语言的安全防护，这些改动也让第三方代码无法检测同一上下文中运行的其他代码。
+
+严格模式下还有一个限制，就是不能给函数的caller 属性赋值，否则会导致错误。
+
+
+
+### 10.9.4 new.target
+
+ECMAScript 中的函数始终可以作为构造函数实例化一个新对象，也可以作为普通函数被调用。ECMAScript 6 新增了检测函数是否使用new 关键字调用的new.target 属性。如果函数是正常调用的，则new.target 的值是undefined；如果是使用new 关键字调用的，则new.target 将引用被调用的构造函数。
+
+```javascript
+function King() {
+    if (!new.target) {
+    	throw 'King must be instantiated using "new"'
+}
+console.log('King instantiated using "new"');
+}
+new King(); // King instantiated using "new"
+King(); // Error: King must be instantiated using "new"
+```
+
+
+
+## 10.10 函数属性与方法
+
+前面提到过，ECMAScript 中的函数是对象，因此有属性和方法。每个函数都有两个属性：length和prototype。其中，length 属性保存函数定义的命名参数的个数，如下例所示：
+
+```javascript
+function sayName(name) {
+	console.log(name);
+}
+function sum(num1, num2) {
+	return num1 + num2;
+}
+function sayHi() {
+	console.log("hi");
+}
+console.log(sayName.length); // 1
+console.log(sum.length); // 2
+console.log(sayHi.length); // 0
+```
+
+prototype 是保存引用类型所有实例方法的地方，这意味着toString()、valueOf()等方法实际上都保存在prototype 上，进而由所有实例共享。这个属性在自定义类型时特别重要。在ES5中，prototype属性是不可枚举的，因此使用for-in循环不会返回这个属性。
+
+函数还提供两个方法：apply()和call()。这两个方法都会以指定的this 值来调用函数，即会设置调用函数时函数体内this 对象的值。
+
+- apply() 方法调用一个具有给定this值的函数，以及以一个数组（或类数组对象）的形式提供的参数。
+- call() 方法使用一个指定的 this 值和单独给出的一个或多个参数来调用一个函数。
+
+除此之外，ES5还定义了一个新方法：bind()。bind()方法能创建一个新的函数实例，其中的this值会被绑定到传给bind()的对象。
+
+对函数而言，继承的方法toLocaleString()和toString()始终返回函数的代码。返回代码的具体格式因浏览器而异。有的返回源代码，包含注释，而有的只返回代码的内部形式，会删除注释，甚至代码可能被解释器修改过。由于这些差异，因此不能在重要功能中依赖这些方法返回的值，而只应在调试中使用它们。继承的方法valueOf()返回函数本身。
+
+
+
+## 10.11 函数表达式
+
+定义函数有两种方式：函数声明和函数表达式。函数声明的特点是函数声明提升，即函数声明会在代码执行之前获得定义。函数表达式是创建一个函数再把它赋值给一个变量。这样创建的函数叫做匿名函数（也被称作兰姆达函数），因为function关键字后面没有标识符。未赋值给其他变量的匿名函数的name属性时空字符串。函数表达式需要先赋值才能使用。
+
+
+
+## 10.12 递归
+
+递归函数通常的形式为一个函数通过名称调用自己。之前介绍过通过arguments.callee来减少代码耦合度，但在严格模式下运行的代码是不能访问arguments.callee的。此时，可以通过命名函数表达式来解决。
+
+```javascript
+const factorial = (function f(num) {
+    if (num <= 1) {
+        return 1;
+    } else {
+        return num * f(num - 1);
+    }
+});
+```
+
+
+
+## 10.13 尾调用优化
+
+ES6规范新增了一项内存管理优化机制，让JavaScript引擎在满足条件的时候可以重用栈帧。具体来说，这项优化非常适合“尾调用”，即外部函数的返回值是一个内部函数的返回值。如：
+
+```javascript
+function outerFunction() {
+	return innerFunction(); // 尾调用
+}
+```
+
+在ES6**优化前**，执行这个例子会在内存中发生如下的操作：
+
+1. 执行到outerFunction 函数体，第一个栈帧被推到栈上。
+2. 执行outerFunction 函数体，到return 语句。计算返回值必须先计算innerFunction。
+3. 执行到innerFunction 函数体，第二个栈帧被推到栈上。
+4. 执行innerFunction 函数体，计算其返回值。
+5. 将返回值传回outerFunction，然后outerFunction 再返回值。
+6. 将栈帧弹出栈外。
+
+再ES6**优化后**，执行这个例子会在内存中发生如下的操作：
+
+1. 执行到outerFunction 函数体，第一个栈帧被推到栈上。
+2. 执行outerFunction 函数体，到达return 语句。为求值返回语句，必须先求值innerFunction。
+3. 引擎发现把第一个栈帧弹出栈外也没问题，因为innerFunction 的返回值也是outerFunction的返回值。
+4. 弹出outerFunction 的栈帧。
+5. 执行到innerFunction 函数体，栈帧被推到栈上。
+6. 执行innerFunction 函数体，计算其返回值。
+7. 将innerFunction 的栈帧弹出栈外。
+
+第一种情况下，每多调用一次嵌套函数，就会多增加一个栈帧。而第二种情况下无论调用多少次嵌套函数，都只有一个栈帧。这就是ES6尾调用优化的关键：如果函数的逻辑允许基于尾调用将其销毁，则引擎就会那么做。
+
+
+
+### 10.13.1 尾调用优化的条件
+
+尾调用优化的条件就是确定外部栈帧真的没有必要存在了。设计的条件如下：
+
+- 代码在严格模式下执行；
+- 外部函数的返回值是对尾调用函数的调用；
+- 尾调用函数返回后不需要执行额外的逻辑；
+- 尾调用函数不是引用外部函数作用域中自由变量的闭包。
+
+无论是递归尾调用还是非递归尾调用，都可以应用优化。引擎并不区分尾调用中调用的是函数自身还是其他函数。不过，这个优化在递归场景下的效果是最明显的，因为递归代码最容易在栈内存中迅速产生大量栈帧。
+
+Notes：尾调用优化之所以要求代码在严格模式下执行，是因为在非严格模式中，函数调用允许使用f.arguments和f.caller，而它们都会引用外部函数的栈帧。这意味着无法应用优化。因此尾调用优化要求必须在严格模式下有效，以防止引用这些属性。
+
+
+
+### 10.13.2 尾调用优化的代码
+
+```javascript
+// 递归计算斐波那契数列
+function fib(n) {
+	if (n < 2) {
+		return n;
+	}
+	return fib(n - 1) + fib(n - 2);
+}
+console.log(fib(0)); // 0
+console.log(fib(1)); // 1
+console.log(fib(2)); // 1
+console.log(fib(3)); // 2
+console.log(fib(4)); // 3
+console.log(fib(5)); // 5
+console.log(fib(6)); // 8
+```
+
+由于函数的返回语句中有一个相加的操作。所以fib(n)的栈帧数的内存复杂度是O(2*n)，如果n值足够大的话，会给浏览器带来麻烦。可以通过尾调用来优化这个函数。
+
+```javascript
+"use strict";
+// 基础框架
+function fib(n) {
+	return fibImpl(0, 1, n);
+}
+// 执行递归
+function fibImpl(a, b, n) {
+    if (n === 0) {
+    	return a;
+    }
+    return fibImpl(b, a + b, n - 1);
+}
+```
+
+
+
+## 10.14 闭包
+
+闭包指的是那些引用了另一个函数作用域中变量的函数，通常在嵌套函数中实现。闭包会保留它们包含函数的作用域，所以比其他函数更占用内存。过度使用闭包可能导致内存过度占用，因此建议仅在十分必要时使用。V8 等优化的JavaScript 引擎会努力回收被闭包困住的内存，不过我们还是建议在使用闭包时要谨慎。可以使用null来解除对函数的引用，从而让垃圾回收程序可以将内存释放掉。
+
+
+
+### 10.14.1 this对象
+
+在闭包中使用this 会让代码变复杂。如果内部函数没有使用箭头函数定义，则this 对象会在运行时绑定到执行函数的上下文。如果在全局函数中调用，则this 在非严格模式下等于window，在严格模式下等于undefined。如果作为某个对象的方法调用，则this 等于这个对象。匿名函数在这种情况下不会绑定到某个对象，这就意味着this 会指向window，除非在严格模式下this 是undefined。
+
+```javascript
+window.identity = 'The Window';
+let object = {
+    identity: 'My Object',
+    getIdentityFunc() {
+        return function() {
+        	return this.identity;
+        };
+    }
+};
+console.log(object.getIdentityFunc()()); // 'The Window'
+```
+
+这里先创建了一个全局变量identity，之后又创建一个包含identity 属性的对象。这个对象还包含一个getIdentityFunc()方法，返回一个匿名函数。这个匿名函数返回this.identity。因为getIdentityFunc()返回函数，所以object.getIdentityFunc()()会立即调用这个返回的函数，从而得到一个字符串。可是，此时返回的字符串是"The Winodw"，即全局变量identity 的值。
+
+每个函数在被调用时都会自动创建两个特殊变量：this 和arguments。内部函数永远不可能直接访问外部函数的这两个变量。因此可以把this保存到闭包可以访问的另一个变量中。
+
+```javascript
+window.identity = 'The Window';
+let object = {
+    identity: 'My Object',
+    getIdentityFunc() {
+    	let that = this;
+    	return function() {
+        	return that.identity;
+        };
+    }
+};
+console.log(object.getIdentityFunc()()); // 'My Object'
+```
+
+
+
+### 10.14.2 内存泄露
+
+由于IE 在IE9 之前对JScript 对象和COM对象使用了不同的垃圾回收机制，所以闭包在这些旧版本IE 中可能会导致问题。在这些版本的IE 中，把HTML 元素保存在某个闭包的作用域中，就相当于宣布该元素不能被销毁。
+
+```javascript
+function assignHandler() {
+    let element = document.getElementById('someElement');
+    element.onclick = () => console.log(element.id);
+}
+```
+
+以上代码创建了一个闭包，即使用element元素的事件处理程序，而这个处理程序又创建了一个循环引用，匿名函数（箭头函数）引用着assignHandler()的活动对象，阻止了对element 的引用计数归零。只要这个匿名函数存在，element 的引用计数就至少等于1。也就是说，内存不会被回收。
+
+```javascript
+// 更改版本
+function assignHandler() {
+    let element = document.getElementById('someElement');
+    let id = element.id;
+    element.onclick = () => console.log(id);
+    element = null;
+}
+```
+
+在这个修改的版本中，闭包改为引用一个保存着element.id 的变量id，从而消除了循环引用。不过，光有这一步还不足以解决内存问题。因为闭包还是会引用包含函数的活动对象，而其中包含element。即使闭包没有直接引用element，包含函数的活动对象上还是保存着对它的引用。因此，必须再把element 设置为null。这样就解除了对这个COM 对象的引用，其引用计数也会减少，从而确保其内存可以在适当的时候被回收。
+
+
+
+## 10.15 立即调用的函数表达式
+
+立即调用的匿名函数又被称作立即调用的函数表达式（IIFE，Immediately Invoked Function Expression）。它类似于函数声明，但由于被包含在括号中，所以会被解释为函数表达式。紧跟在第一组括号后面的第二组括号会立即调用前面的函数表达式。
+
+```javascript
+(function() {
+	// 块级作用域
+})();
+```
+
+使用IIFE 可以模拟块级作用域，即在一个函数表达式内部声明变量，然后立即调用这个函数。这样位于函数体作用域的变量就像是在块级作用域中一样。ECMAScript 5 尚未支持块级作用域，使用IIFE模拟块级作用域是相当普遍的。
+
+```javascript
+// IIFE
+(function () {
+    for (var i = 0; i < count; i++) {
+    	console.log(i);
+    }
+})();
+console.log(i); // 抛出错误
+```
+
+前面的代码在执行到IIFE 外部的console.log()时会出错，因为它访问的变量是在IIFE 内部定义的，在外部访问不到。在ECMAScript 5.1 及以前，为了防止变量定义外泄，IIFE 是个非常有效的方式。这样也不会导致闭包相关的内存问题，因为不存在对这个匿名函数的引用。为此，只要函数执行完毕，其作用域链就可以被销毁。
+
+在ECMAScript 6 以后，IIFE 就没有那么必要了，因为块级作用域中的变量（let和const）无须IIFE 就可以实现同样的隔离。
+
+
+
+## 10.16 私有变量
+
+严格来讲，JavaScript 没有私有成员的概念，所有对象属性都公有的。不过，倒是有私有变量的概念。任何定义在函数或块中的变量，都可以认为是私有的，因为在这个函数或块的外部无法访问其中的变量。私有变量包括函数参数、局部变量，以及函数内部定义的其他函数。
+
+特权方法（privileged method）是能够访问函数私有变量（及私有函数）的公有方法。在对象上有两种方式创建特权方法。第一种是在构造函数中实现，如：
+
+```javascript
+function MyObject() {
+    // 私有变量和私有函数
+    let privateVariable = 10;
+    function privateFunction() {
+        return false;
+    }
+    // 特权方法
+    this.publicMethod = function() {
+        privateVariable++;
+        return privateFunction();
+    };
+}
+```
+
+这个模式是把所有私有变量和私有函数都定义在构造函数中。然后，再创建一个能够访问这些私有成员的特权方法。这样做之所以可行，是因为定义在构造函数中的特权方法其实是一个闭包，它具有访问构造函数中定义的所有变量和函数的能力。使用构造函数来创建对象，每次调用构造函数的时候都会重新创建一套变量和方法，可以使用静态私有变量实现特权方法来避免这个问题。
+
+
+
+### 10.16.1 静态私有变量
+
+特权方法也可以通过使用私有作用域定义私有变量和函数来实现。如：
+
+```javascript
+(function() {
+    // 私有变量和私有函数
+    let privateVariable = 10;
+    function privateFunction() {
+    	return false;
+    }
+    // 构造函数
+    MyObject = function() {};
+    // 公有和特权方法
+    MyObject.prototype.publicMethod = function() {
+        privateVariable++;
+        return privateFunction();
+    };
+})();
+```
+
+在这个模式中，匿名函数表达式创建了一个包含构造函数及其方法的私有作用域。首先定义的是私有变量和私有函数，然后又定义了构造函数和公有方法。公有方法定义在构造函数的原型上，与典型的原型模式一样。注意，这个模式定义的构造函数没有使用函数声明，使用的是函数表达式。函数声明会创建内部函数，在这里并不是必需的。基于同样的原因（但操作相反），这里声明MyObject 并没有使用任何关键字。因为不使用关键字声明的变量会创建在全局作用域中，所以MyObject 变成了全局变量，可以在这个私有作用域外部被访问。注意在严格模式下给未声明的变量赋值会导致错误。
+
+这个模式与前一个模式的主要区别就是，私有变量和私有函数是由实例共享的。因为特权方法定义在原型上，所以同样是由实例共享的。特权方法作为一个闭包，始终引用着包含它的作用域。
+
+```javascript
+(function() {
+    let name = '';
+    Person = function(value) {
+    	name = value;
+    };
+    Person.prototype.getName = function() {
+    	return name;
+    };
+    Person.prototype.setName = function(value) {
+    	name = value;
+    };
+})();
+let person1 = new Person('Nicholas');
+console.log(person1.getName()); // 'Nicholas'
+person1.setName('Matt');
+console.log(person1.getName()); // 'Matt'
+let person2 = new Person('Michael');
+console.log(person1.getName()); // 'Michael'
+console.log(person2.getName()); // 'Michael'
+```
+
+这里的Person 构造函数可以访问私有变量name，跟getName()和setName()方法一样。使用这种模式，name 变成了静态变量，可供所有实例使用。这意味着在任何实例上调用setName()修改这个变量都会影响其他实例。调用 setName()或创建新的Person 实例都要把name 变量设置为一个新值。而所有实例都会返回相同的值。
+
+像这样创建静态私有变量可以利用原型更好地重用代码，只是每个实例没有了自己的私有变量。最终，到底是把私有变量放在实例中，还是作为静态私有变量，都需要根据自己的需求来确定。
+
+
+
+### 10.16.2 模块模式
+
+Douglas Crockford 所说的模块模式，在一个单例对象上实现了相同的隔离和封装。单例对象（singleton）就是只有一个实例的对象。按照惯例，JavaScript 是通过对象字面量来创建单例对象的，如下面的例子所示：
+
+```javascript
+let singleton = {
+    name: value,
+    method() {
+    	// 方法的代码
+    }
+};
+```
+
+模块模式是在单例对象基础上加以扩展，使其通过作用域链来关联私有变量和特权方法。模块模式的样板代码如下：
+
+```javascript
+let singleton = function() {
+    // 私有变量和私有函数
+    let privateVariable = 10;
+    function privateFunction() {
+    	return false;
+	}
+// 特权/公有方法和属性
+    return {
+        publicProperty: true,
+        publicMethod() {
+            privateVariable++;
+            return privateFunction();
+    	}
+    };
+}();
+```
+
+模块模式使用了匿名函数返回一个对象。在匿名函数内部，首先定义私有变量和私有函数。之后，创建一个要通过匿名函数返回的对象字面量。这个对象字面量中只包含可以公开访问的属性和方法。因为这个对象定义在匿名函数内部，所以它的所有公有方法都可以访问同一个作用域的私有变量和私有函数。本质上，对象字面量定义了单例对象的公共接口。
+
+在模块模式中，单例对象作为一个模块，经过初始化可以包含某些私有的数据，而这些数据又可以通过其暴露的公共方法来访问。以这种方式创建的每个单例对象都是Object 的实例，因为最终单例都由一个对象字面量来表示。不过这无关紧要，因为单例对象通常是可以全局访问的，而不是作为参数传给函数的，所以可以避免使用instanceof 操作符确定参数是不是对象类型的需求。
+
+
+
+### 10.16.3 模块增强模式
+
+另一个利用模块模式的做法是在返回对象之前先对其进行增强。这适合单例对象需要是某个特定类型的实例，但又必须给它添加额外属性或方法的场景。
+
+```javascript
+let singleton = function() {
+    // 私有变量和私有函数
+    let privateVariable = 10;
+    function privateFunction() {
+        return false;
+    }
+    // 创建对象
+    let object = new CustomType();
+    // 添加特权/公有属性和方法
+    object.publicProperty = true;
+    object.publicMethod = function() {
+        privateVariable++;
+        return privateFunction();
+    };
+    // 返回对象
+    return object;
+}();
+```
+
+
+
+## 10.17 小结
+
+函数是JavaScript 编程中最有用也最通用的工具。ECMAScript 6 新增了更加强大的语法特性，从而让开发者可以更有效地使用函数。
+
+- 函数表达式与函数声明是不一样的。函数声明要求写出函数名称，而函数表达式并不需要。没有名称的函数表达式也被称为匿名函数。
+- ES6 新增了类似于函数表达式的箭头函数语法，但两者也有一些重要区别。
+- JavaScript 中函数定义与调用时的参数极其灵活。arguments 对象，以及ES6 新增的扩展操作符，可以实现函数定义和调用的完全动态化。
+- 函数内部也暴露了很多对象和引用，涵盖了函数被谁调用、使用什么调用，以及调用时传入了什么参数等信息。
+- JavaScript 引擎可以优化符合尾调用条件的函数，以节省栈空间。
+- 闭包的作用域链中包含自己的一个变量对象，然后是包含函数的变量对象，直到全局上下文的变量对象。
+- 通常，函数作用域及其中的所有变量在函数执行完毕后都会被销毁。
+- 闭包在被函数返回之后，其作用域会一直保存在内存中，直到闭包被销毁。
+- 函数可以在创建之后立即调用，执行其中代码之后却不留下对函数的引用。
+- 立即调用的函数表达式如果不在包含作用域中将返回值赋给一个变量，则其包含的所有变量都会被销毁。
+- 虽然JavaScript 没有私有对象属性的概念，但可以使用闭包实现公共方法，访问位于包含作用域中定义的变量。
+- 可以访问私有变量的公共方法叫作特权方法。
+- 特权方法可以使用构造函数或原型模式通过自定义类型中实现，也可以使用模块模式或模块增强模式在单例对象上实现。
+
+
+
+# 11. 期约与异步函数
 
