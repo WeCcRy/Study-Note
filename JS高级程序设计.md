@@ -6374,3 +6374,103 @@ setInterval()方法也会返回一个循环定时 ID，可以用于在未来某�
 
 
 ## 12.2 Location对象
+
+location 对象提供了当前窗口中加载文档的信息，以及通常的导航功能。它既是 window 的属性，也是 document 的属性。window.location 和 document.location 指向同一个对象。location 对象不仅保存着当前加载文档的信息，也保存着把 URL 解析为离散片段后能够通过属性访问的信息。
+
+
+
+### 12.2.1 查询字符串
+
+URLSearchParams 提供了一组标准 API 方法，通过它们可以检查和修改查询字符串。给URLSearchParams 构造函数传入一个查询字符串，就可以创建一个实例。这个实例上暴露了 get()、set()和 delete()等方法，可以对查询字符串执行相应操作。
+
+```javascript
+let qs = "?q=javascript&num=10"; 
+let searchParams = new URLSearchParams(qs); 
+alert(searchParams.toString()); // " q=javascript&num=10" 
+searchParams.has("num"); // true 
+searchParams.get("num"); // 10 
+searchParams.set("page", "3"); 
+alert(searchParams.toString()); // " q=javascript&num=10&page=3" 
+searchParams.delete("q"); 
+alert(searchParams.toString()); // " num=10&page=3"
+```
+
+
+
+### 12.2.2 操作地址
+
+可以通过修改 location 对象修改浏览器的地址。
+
+```javascript
+location.assign("http://www.wrox.com");
+window.location = "http://www.wrox.com"; 
+location.href = "http://www.wrox.com";
+```
+
+修改 location 对象的属性也会修改当前加载的页面。其中，hash、search、hostname、pathname和 port 属性被设置为新值之后都会修改当前 URL。除了 hash 之外，只要修改 location 的一个属性，就会导致页面重新加载新 URL。
+
+
+
+## 12.3 navigator对象
+
+navigator 对象的属性通常用于确定浏览器的类型。与其他 BOM 对象一样，每个浏览器都支持自己的属性。
+
+
+
+### 12.3.1 检测插件
+
+可以通过navigator对象中的plugins数组属性来确定浏览器是否安装了某个插件，该数组中的每一项包含如下属性：
+
+- name：插件名称。
+- description：插件介绍。
+- filename：插件的文件名。
+- length：由当前插件处理的 MIME 类型数量。
+
+
+
+### 12.3.2 处理注册程序
+
+现代浏览器支持 navigator 上的（在 HTML5 中定义的）registerProtocolHandler()方法。这个方法可以把一个网站注册为处理某种特定类型信息应用程序。随着在线 RSS 阅读器和电子邮件客户端的流行，可以借助这个方法将 Web 应用程序注册为像桌面软件一样的默认应用程序。
+
+要使用 registerProtocolHandler()方法，必须传入 3 个参数：要处理的协议（如"mailto"或"ftp"）、处理该协议的 URL，以及应用名称。比如，要把一个 Web 应用程序注册为默认邮件客户端，可以这样做：
+
+```javascript
+navigator.registerProtocolHandler("mailto", "http://www.somemailclient.com?cmd=%s", "Some Mail Client");
+```
+
+这个例子为"mailto"协议注册了一个处理程序，这样邮件地址就可以通过指定的 Web 应用程序打开。注意，第二个参数是负责处理请求的 URL，%s 表示原始的请求。
+
+
+
+## 12.4 screen对象
+
+screen 对象保存的纯粹是客户端能力信息，也就是浏览器窗口外面的客户端显示器的信息，比如像素宽度和像素高度。每个浏览器都会在 screen 对象上暴露不同的属性。
+
+
+
+## 12.5 history对象
+
+history 对象表示当前窗口首次使用以来用户的导航历史记录。因为 history 是 window 的属性，所以每个 window 都有自己的 history 对象。出于安全考虑，这个对象不会暴露用户访问过的 URL，但可以通过它在不知道实际 URL 的情况下前进和后退。
+
+
+
+### 12.5.1 导航
+
+go()方法可以在用户历史记录中沿任何方向导航，可以前进也可以后退。这个方法只接收一个参数，这个参数可以是一个整数，表示前进或后退多少步。负值表示在历史记录中后退（类似点击浏览器的“后退”按钮），而正值表示在历史记录中前进（类似点击浏览器的“前进”按钮）。
+
+go()有两个简写方法：back()和 forward()。这两个方法模拟了浏览器的后退按钮和前进按钮。
+
+
+
+### 12.5.2 历史状态管理
+
+## 12.6 小结
+
+浏览器对象模型（BOM，Browser Object Model）是以 window 对象为基础的，这个对象代表了浏览器窗口和页面可见的区域。window 对象也被复用为 ECMAScript 的 Global 对象，因此所有全局变量和函数都是它的属性，而且所有原生类型的构造函数和普通函数也都从一开始就存在于这个对象之上。
+
+- 要引用其他 window 对象，可以使用几个不同的窗口指针。
+- 通过 location 对象可以以编程方式操纵浏览器的导航系统。通过设置这个对象上的属性，可以改变浏览器 URL 中的某一部分或全部。
+- 使用 replace()方法可以替换浏览器历史记录中当前显示的页面，并导航到新 URL。
+- navigator 对象提供关于浏览器的信息。提供的信息类型取决于浏览器，不过有些属性如userAgent 是所有浏览器都支持的。
+
+BOM 中的另外两个对象也提供了一些功能。screen 对象中保存着客户端显示器的信息。这些信息通常用于评估浏览网站的设备信息。history 对象提供了操纵浏览器历史记录的能力，开发者可以确定历史记录中包含多少个条目，并以编程方式实现在历史记录中导航，而且也可以修改历史记录。
